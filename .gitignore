@@ -1,4 +1,6 @@
 media/videos/**
 media/texts/**
 media/Tex/**
-media
+media/*
+
+utils/__pycache__/**
