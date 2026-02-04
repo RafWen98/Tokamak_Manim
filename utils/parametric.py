@@ -84,6 +84,7 @@ def compute_fixed_frame(
     normals = np.zeros((n, 3))
     binormals = np.zeros((n, 3))
     
+    # First pass: compute initial normals/binormals
     for i in range(n):
         point = points[i]
         tangent = tangents[i]
@@ -133,6 +134,14 @@ def compute_fixed_frame(
         
         normals[i] = normal
         binormals[i] = binormal
+    
+    # Second pass: fix sign flips by ensuring continuity
+    # This prevents the cross-section from flipping when tangent passes through horizontal
+    for i in range(1, n):
+        # Check if normal flipped relative to previous
+        if np.dot(normals[i], normals[i-1]) < 0:
+            normals[i] = -normals[i]
+            binormals[i] = -binormals[i]
     
     return points, tangents, normals, binormals
 
@@ -328,7 +337,9 @@ def tube_along_path(
     defaults.update(surface_kwargs)
     
     # Create and return surface
-    u_max = 1.0 if not closed else 1.0 - 1.0 / path_resolution
+    # For closed paths, we need u to go all the way to 1.0 so the surface
+    # wraps around and connects back to the start
+    u_max = 1.0
     
     return Surface(
         surface_func,
@@ -377,14 +388,24 @@ def d_shaped_coil_path(
     
     t_norm = t / TAU  # Normalize to 0-1
     
-    # Segment proportions (must sum to 1.0 for closed loop!)
-    # Proportions based on approximate arc lengths
-    seg1 = 0.25  # Inner straight line (going up)
-    seg2 = 0.13  # Top small arc
-    seg3 = 0.34  # Outer large arc (the big D bow)
-    seg4 = 0.13  # Bottom small arc
-    seg5 = 0.15  # Return straight line (going down, closes the loop)
-    # Total: 0.25 + 0.13 + 0.34 + 0.13 + 0.15 = 1.00
+    # Segment proportions - based on actual arc lengths for smooth parameterization
+    # The D-shape has 4 segments that naturally close:
+    # 1. Inner straight line (length = 2*half_l)
+    # 2. Top corner arc (length = pi/2 * r_corner)
+    # 3. Outer big arc (length = pi * R_arc)
+    # 4. Bottom corner arc (length = pi/2 * r_corner)
+    
+    len1 = 2 * half_l                    # Straight inner edge
+    len2 = (pi / 2) * r_corner           # Top corner arc
+    len3 = pi * R_arc                    # Big outer arc
+    len4 = (pi / 2) * r_corner           # Bottom corner arc
+    total_len = len1 + len2 + len3 + len4
+    
+    seg1 = len1 / total_len
+    seg2 = len2 / total_len
+    seg3 = len3 / total_len
+    seg4 = len4 / total_len
+    # Total = 1.0 by construction
     
     if t_norm < seg1:
         # Segment 1: Inner vertical straight line (going UP)
@@ -393,33 +414,27 @@ def d_shaped_coil_path(
         Z_pos = -half_l + (2 * half_l) * frac
         
     elif t_norm < seg1 + seg2:
-        # Segment 2: Top small corner arc
+        # Segment 2: Top small corner arc (from inner edge to outer)
         frac = (t_norm - seg1) / seg2
         theta = pi - frac * (pi / 2)
         R_pos = R_inner + r_corner + r_corner * cos(theta)
         Z_pos = half_l + r_corner * sin(theta)
         
     elif t_norm < seg1 + seg2 + seg3:
-        # Segment 3: Outer large arc (the big bow)
+        # Segment 3: Outer large arc (the big D bow, going down)
         frac = (t_norm - seg1 - seg2) / seg3
         theta = pi / 2 - frac * pi
         arc_center_R = R_inner + r_corner
         R_pos = arc_center_R + R_arc * cos(theta)
         Z_pos = (half_l + r_corner) * sin(theta)
         
-    elif t_norm < seg1 + seg2 + seg3 + seg4:
-        # Segment 4: Bottom small corner arc
+    else:
+        # Segment 4: Bottom small corner arc (returns to start)
         frac = (t_norm - seg1 - seg2 - seg3) / seg4
+        frac = min(frac, 1.0)  # Clamp to avoid overshoot at t=TAU
         theta = -pi / 2 - frac * (pi / 2)
         R_pos = R_inner + r_corner + r_corner * cos(theta)
         Z_pos = -half_l + r_corner * sin(theta)
-        
-    else:
-        # Segment 5: Return to start (inner straight line going down)
-        # This closes the loop smoothly
-        frac = (t_norm - seg1 - seg2 - seg3 - seg4) / seg5
-        R_pos = R_inner
-        Z_pos = -half_l  # Already at bottom, stay there to close
     
     return np.array([
         R_pos * cos(angle),

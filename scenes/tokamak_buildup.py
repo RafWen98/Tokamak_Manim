@@ -337,7 +337,7 @@ class TokamakShowcase(ThreeDScene):
         
         # Rotate
         self.begin_ambient_camera_rotation(rate=0.2)
-        self.wait(10)
+        self.wait(2)
         self.stop_ambient_camera_rotation()
     
     # Reuse the same creation methods
