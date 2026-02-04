@@ -1,0 +1,1 @@
+This is a project of creating a 3D illustration of a tokamak and al the science behind it suing the manim library from 3blue1brown.
